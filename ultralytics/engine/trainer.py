@@ -284,6 +284,7 @@ class BaseTrainer:
         # Dataloaders
         batch_size = self.batch_size // max(world_size, 1)
         self.train_loader = self.get_dataloader(self.trainset, batch_size=batch_size, rank=LOCAL_RANK, mode="train")
+
         if RANK in {-1, 0}:
             # Note: When training DOTA dataset, double batch size could get OOM on images with >2000 objects.
             self.test_loader = self.get_dataloader(
@@ -315,13 +316,17 @@ class BaseTrainer:
         self.scheduler.last_epoch = self.start_epoch - 1  # do not move
         self.run_callbacks("on_pretrain_routine_end")
 
+
     def _do_train(self, world_size=1):
         """Train completed, evaluate and plot if specified by arguments."""
+        
         if world_size > 1:
             self._setup_ddp(world_size)
         self._setup_train(world_size)
 
         nb = len(self.train_loader)  # number of batches
+        print(nb)
+        print("###"*30)
         nw = max(round(self.args.warmup_epochs * nb), 100) if self.args.warmup_epochs > 0 else -1  # warmup iterations
         last_opt_step = -1
         self.epoch_time = None
@@ -428,7 +433,8 @@ class BaseTrainer:
                 self.ema.update_attr(self.model, include=["yaml", "nc", "args", "names", "stride", "class_weights"])
 
                 # Validation
-                if self.args.val or final_epoch or self.stopper.possible_stop or self.stop:
+                # if self.args.val or final_epoch or self.stopper.possible_stop or self.stop:
+                if (self.args.val and (epoch + 1) % self.args.val_interval == 0) or final_epoch or self.stopper.possible_stop or self.stop:
                     self.metrics, self.fitness = self.validate()
                 self.save_metrics(metrics={**self.label_loss_items(self.tloss), **self.metrics, **self.lr})
                 self.stop |= self.stopper(epoch + 1, self.fitness) or final_epoch
@@ -565,6 +571,7 @@ class BaseTrainer:
         except Exception as e:
             raise RuntimeError(emojis(f"Dataset '{clean_url(self.args.data)}' error ❌ {e}")) from e
         self.data = data
+        print("self.data:", self.data)
         return data["train"], data.get("val") or data.get("test")
 
     def setup_model(self):
@@ -609,7 +616,7 @@ class BaseTrainer:
         return metrics, fitness
 
     def get_model(self, cfg=None, weights=None, verbose=True):
-        """Get model and raise NotImplementedError for loading cfg files."""
+        """Get model and raise NotImplementedError for loading cfg files."""  
         raise NotImplementedError("This task trainer doesn't support loading cfg files")
 
     def get_validator(self):
